@@ -824,7 +824,6 @@ func (n *network) CreateEndpoint(name string, options ...EndpointOption) (Endpoi
 	}
 
 	ep := &endpoint{name: name, generic: make(map[string]interface{}), iface: &endpointInterface{}}
-	ep.id = stringid.GenerateRandomID()
 
 	// Initialize ep.network with a possibly stale copy of n. We need this to get network from
 	// store. But once we get it from store we will have the most uptodate copy possibly.
@@ -837,6 +836,10 @@ func (n *network) CreateEndpoint(name string, options ...EndpointOption) (Endpoi
 	n = ep.network
 
 	ep.processOptions(options...)
+
+	if ep.id == "" {
+		ep.id = stringid.GenerateRandomID()
+	}
 
 	for _, llIPNet := range ep.Iface().LinkLocalAddresses() {
 		if !llIPNet.IP.IsLinkLocalUnicast() {
