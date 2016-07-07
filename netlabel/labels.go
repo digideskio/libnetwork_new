@@ -47,6 +47,9 @@ const (
 
 	// Internal constant represents that the network is internal which disables default gateway service
 	Internal = Prefix + ".internal"
+
+	// Internal constant represents that the network is internal which disables default gateway service
+	Legacy = Prefix + ".legacy"
 )
 
 var (
