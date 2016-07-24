@@ -31,6 +31,9 @@ const (
 	bidir
 )
 
+// Force state cleanup after 3 x rotation time
+var saHardLimit = netlink.XfrmStateLimits{TimeHard: uint64(129610)}
+
 type key struct {
 	value []byte
 	tag   uint32
@@ -240,6 +243,7 @@ func programSA(localIP, remoteIP net.IP, spi *spi, k *key, dir int, add bool) (f
 		}
 		if add {
 			rSA.Aead = buildAeadAlgo(k, spi.reverse)
+			rSA.Limits = saHardLimit
 		}
 
 		exists, err := saExists(rSA)
@@ -265,6 +269,7 @@ func programSA(localIP, remoteIP net.IP, spi *spi, k *key, dir int, add bool) (f
 		}
 		if add {
 			fSA.Aead = buildAeadAlgo(k, spi.forward)
+			fSA.Limits = saHardLimit
 		}
 
 		exists, err := saExists(fSA)
