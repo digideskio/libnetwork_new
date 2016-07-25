@@ -332,7 +332,7 @@ func networkOnceInit() {
 		return
 	}
 
-	err := createVxlan("testvxlan", 1, 0)
+	err := createVxlan("testvxlan", 1, 0, nil)
 	if err != nil {
 		logrus.Errorf("Failed to create testvxlan interface: %v", err)
 		return
@@ -476,7 +476,12 @@ func (n *network) setupSubnetSandbox(s *subnet, brName, vxlanName string) error 
 		return fmt.Errorf("bridge creation in sandbox failed for subnet %q: %v", s.subnetIP.String(), err)
 	}
 
-	err := createVxlan(vxlanName, n.vxlanID(s), n.maxMTU())
+	var srcIP net.IP
+	if n.secure {
+		srcIP = net.ParseIP(n.driver.bindAddress)
+	}
+
+	err := createVxlan(vxlanName, n.vxlanID(s), n.maxMTU(), srcIP)
 	if err != nil {
 		return err
 	}

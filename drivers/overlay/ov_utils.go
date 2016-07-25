@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"syscall"
 
@@ -52,12 +53,13 @@ func createVethPair() (string, string, error) {
 	return name1, name2, nil
 }
 
-func createVxlan(name string, vni uint32, mtu int) error {
+func createVxlan(name string, vni uint32, mtu int, srcIP net.IP) error {
 	defer osl.InitOSContext()()
 
 	vxlan := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{Name: name, MTU: mtu},
 		VxlanId:   int(vni),
+		SrcAddr:   srcIP,
 		Learning:  true,
 		Port:      vxlanPort,
 		Proxy:     true,
