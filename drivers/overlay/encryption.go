@@ -90,6 +90,9 @@ func (d *driver) checkEncryption(nid string, rIP net.IP, vxlanID uint32, isLocal
 
 	lIP := net.ParseIP(d.bindAddress)
 	aIP := net.ParseIP(d.advertiseAddress)
+	if d.advAddrIsLocal {
+		lIP = aIP
+	}
 	nodes := map[string]net.IP{}
 
 	switch {
@@ -413,6 +416,10 @@ func (d *driver) updateKeys(newKey, primary, pruneKey *key) error {
 		delIdx = -1
 		lIP    = net.ParseIP(d.bindAddress)
 	)
+
+	if d.advAddrIsLocal {
+		lIP = net.ParseIP(d.advertiseAddress)
+	}
 
 	d.Lock()
 	// add new
