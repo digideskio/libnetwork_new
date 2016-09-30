@@ -206,7 +206,8 @@ func (c *ChainInfo) Forward(action Action, ip net.IP, port int, proto, destAddr 
 		// value" by both iptables and ip6tables.
 		daddr = "0/0"
 	}
-	args := []string{"-t", string(Nat), string(action), c.Name,
+
+	args := []string{
 		"-p", proto,
 		"-d", daddr,
 		"--dport", strconv.Itoa(port),
@@ -215,36 +216,43 @@ func (c *ChainInfo) Forward(action Action, ip net.IP, port int, proto, destAddr 
 	if !c.HairpinMode {
 		args = append(args, "!", "-i", bridgeName)
 	}
-	if output, err := Raw(args...); err != nil {
+	if err := ProgramIfNotPresent(Nat, c.Name, action, args); err != nil {
 		return err
-	} else if len(output) != 0 {
-		return ChainError{Chain: "FORWARD", Output: output}
 	}
 
-	if output, err := Raw("-t", string(Filter), string(action), c.Name,
+	args = []string{
 		"!", "-i", bridgeName,
 		"-o", bridgeName,
 		"-p", proto,
 		"-d", destAddr,
 		"--dport", strconv.Itoa(destPort),
-		"-j", "ACCEPT"); err != nil {
+		"-j", "ACCEPT",
+	}
+	if err := ProgramIfNotPresent(Filter, c.Name, action, args); err != nil {
 		return err
-	} else if len(output) != 0 {
-		return ChainError{Chain: "FORWARD", Output: output}
 	}
 
-	if output, err := Raw("-t", string(Nat), string(action), "POSTROUTING",
+	args = []string{
 		"-p", proto,
 		"-s", destAddr,
 		"-d", destAddr,
 		"--dport", strconv.Itoa(destPort),
-		"-j", "MASQUERADE"); err != nil {
+		"-j", "MASQUERADE",
+	}
+	if err := ProgramIfNotPresent(Nat, "POSTROUTING", action, args); err != nil {
 		return err
-	} else if len(output) != 0 {
-		return ChainError{Chain: "FORWARD", Output: output}
 	}
 
 	return nil
+}
+
+// ProgramIfNotPresent adds the rule specified by args via the specified action
+// only if the rule is not already present in the chain.
+func ProgramIfNotPresent(table Table, chain string, action Action, args []string) error {
+	if Exists(table, chain, args...) {
+		return nil
+	}
+	return RawCombinedOutput(append([]string{"-t", string(table), string(action), chain}, args...)...)
 }
 
 // Link adds reciprocal ACCEPT rule for two supplied IP addresses.
