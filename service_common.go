@@ -21,12 +21,12 @@ func newService(name string, id string, ingressPorts []*PortConfig, aliases []st
 func (c *controller) cleanupServiceBindings(cleanupNID string) {
 	var cleanupFuncs []func()
 
-	c.Lock()
+	c.RLock()
 	services := make([]*service, 0, len(c.serviceBindings))
 	for _, s := range c.serviceBindings {
 		services = append(services, s)
 	}
-	c.Unlock()
+	c.RUnlock()
 
 	for _, s := range services {
 		s.Lock()
@@ -154,9 +154,9 @@ func (c *controller) rmServiceBinding(name, sid, nid, eid string, vip net.IP, in
 		ports: portConfigs(ingressPorts).String(),
 	}
 
-	c.Lock()
+	c.RLock()
 	s, ok := c.serviceBindings[skey]
-	c.Unlock()
+	c.RUnlock()
 	if !ok {
 		return nil
 	}
