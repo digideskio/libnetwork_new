@@ -676,8 +676,42 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 	}
 
 	network.processOptions(options...)
+	if err := network.validateConfiguration(); err != nil {
+		return nil, err
+	}
 
-	_, cap, err := network.resolveDriver(networkType, true)
+	var (
+		cap *driverapi.Capability
+		err error
+	)
+
+	// Reset network types, force local scope and skip allocation and plumbing for configuration networks
+	if network.configOnly {
+		network.scope = datastore.LocalScope
+		network.networkType = ""
+		network.ipamType = ""
+		goto addToStore
+	}
+
+	if network.configFrom != "" {
+		t, err := c.getConfigNetwork(network.configFrom)
+		if err != nil {
+			return nil, types.NotFoundErrorf("configuration network %q does not exist", network.configFrom)
+		}
+		if err := t.applyConfigurationTo(network); err != nil {
+			return nil, types.InternalErrorf("Failed to apply configuration: %v", err)
+		}
+		defer func() {
+			if err == nil {
+				if err := t.getEpCnt().IncEndpointCnt(); err != nil {
+					logrus.Warnf("Failed to update reference count for configuration network %q on creation of network %q: %v",
+						t.Name(), network.Name(), err)
+				}
+			}
+		}()
+	}
+
+	_, cap, err = network.resolveDriver(network.networkType, true)
 	if err != nil {
 		return nil, err
 	}
@@ -723,6 +757,7 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 		}
 	}()
 
+addToStore:
 	// First store the endpoint count, then the network. To avoid to
 	// end up with a datastore containing a network and not an epCnt,
 	// in case of an ungraceful shutdown during this function call.
@@ -742,6 +777,9 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 	if err = c.updateToStore(network); err != nil {
 		return nil, err
 	}
+	if network.configOnly {
+		return network, nil
+	}
 
 	joinCluster(network)
 	if !c.isDistributedControl() {
@@ -755,6 +793,9 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 
 var joinCluster NetworkWalker = func(nw Network) bool {
 	n := nw.(*network)
+	if n.ConfigOnly() {
+		return false
+	}
 	if err := n.joinCluster(); err != nil {
 		logrus.Errorf("Failed to join network %s (%s) into agent cluster: %v", n.Name(), n.ID(), err)
 	}
@@ -770,6 +811,9 @@ func (c *controller) reservePools() {
 	}
 
 	for _, n := range networks {
+		if n.ConfigOnly() {
+			continue
+		}
 		if !doReplayPoolReserve(n) {
 			continue
 		}
