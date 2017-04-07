@@ -57,9 +57,11 @@ After Handshake, the remote driver will receive another POST message to the URL 
 
 	{
 		"Scope": "local"
+		"Multihost": true
 	}
 
 Value of "Scope" should be either "local" or "global" which indicates the capability of remote driver, values beyond these will fail driver's registration and return an error to the caller.
+"Multihost" is a boolean flag which indicates if the driver provides container connectivity across hosts.
 
 ### Create network
 

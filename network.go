@@ -67,6 +67,7 @@ type NetworkInfo interface {
 	Internal() bool
 	Attachable() bool
 	Ingress() bool
+	Multihost() bool
 	ConfigFrom() string
 	ConfigOnly() bool
 	Labels() map[string]string
@@ -195,7 +196,8 @@ type network struct {
 	networkType  string
 	id           string
 	created      time.Time
-	scope        string
+	scope        string // network data scope
+	multihost    bool   // network cluste
 	labels       map[string]string
 	ipamType     string
 	ipamOptions  map[string]string
@@ -456,6 +458,7 @@ func (n *network) CopyTo(o datastore.KVObject) error {
 	dstN.attachable = n.attachable
 	dstN.inDelete = n.inDelete
 	dstN.ingress = n.ingress
+	dstN.multihost = n.multihost
 	dstN.configOnly = n.configOnly
 	dstN.configFrom = n.configFrom
 
@@ -567,6 +570,7 @@ func (n *network) MarshalJSON() ([]byte, error) {
 	netMap["attachable"] = n.attachable
 	netMap["inDelete"] = n.inDelete
 	netMap["ingress"] = n.ingress
+	netMap["multihost"] = n.multihost
 	netMap["configOnly"] = n.configOnly
 	netMap["configFrom"] = n.configFrom
 	return json.Marshal(netMap)
@@ -673,6 +677,9 @@ func (n *network) UnmarshalJSON(b []byte) (err error) {
 	if v, ok := netMap["ingress"]; ok {
 		n.ingress = v.(bool)
 	}
+	if v, ok := netMap["multihost"]; ok {
+		n.multihost = v.(bool)
+	}
 	if v, ok := netMap["configOnly"]; ok {
 		n.configOnly = v.(bool)
 	}
@@ -752,6 +759,13 @@ func NetworkOptionInternalNetwork() NetworkOption {
 func NetworkOptionAttachable(attachable bool) NetworkOption {
 	return func(n *network) {
 		n.attachable = attachable
+	}
+}
+
+// NetworkOptionMultihost returns an option setter to set the network as multihost network
+func NetworkOptionMultihost() NetworkOption {
+	return func(n *network) {
+		n.multihost = true
 	}
 }
 
@@ -868,6 +882,14 @@ func (n *network) driverScope() string {
 	}
 
 	return cap.DataScope
+}
+
+func (n *network) driverMultihost() bool {
+	_, cap, err := n.resolveDriver(n.networkType, true)
+	if err != nil {
+		return false
+	}
+	return cap.Multihost
 }
 
 func (n *network) driver(load bool) (driverapi.Driver, error) {
@@ -1736,6 +1758,12 @@ func (n *network) Dynamic() bool {
 	return n.dynamic
 }
 
+func (n *network) Multihost() bool {
+	n.Lock()
+	defer n.Unlock()
+
+	return n.multihost
+}
 func (n *network) IPv6Enabled() bool {
 	n.Lock()
 	defer n.Unlock()

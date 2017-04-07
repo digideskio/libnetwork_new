@@ -200,7 +200,7 @@ func (c *controller) agentSetup() error {
 			logrus.Errorf("Error in agentInit : %v", err)
 		} else {
 			c.drvRegistry.WalkDrivers(func(name string, driver driverapi.Driver, capability driverapi.Capability) bool {
-				if capability.DataScope == datastore.GlobalScope {
+				if capability.Multihost {
 					c.agentDriverNotify(driver)
 				}
 				return false
@@ -493,7 +493,7 @@ func (n *network) Services() map[string]ServiceInfo {
 }
 
 func (n *network) isClusterEligible() bool {
-	if n.driverScope() != datastore.GlobalScope {
+	if n.driverScope() != datastore.GlobalScope && !n.multihost {
 		return false
 	}
 	return n.getController().getAgent() != nil

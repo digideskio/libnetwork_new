@@ -61,6 +61,7 @@ type network struct {
 func Init(dc driverapi.DriverCallback, config map[string]interface{}) error {
 	c := driverapi.Capability{
 		DataScope: datastore.LocalScope,
+		Multihost: true,
 	}
 	d := &driver{
 		networks: networkTable{},

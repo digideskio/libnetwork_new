@@ -575,7 +575,7 @@ func (c *controller) pushNodeDiscovery(d driverapi.Driver, cap driverapi.Capabil
 		}
 	}
 
-	if d == nil || cap.DataScope != datastore.GlobalScope || nodes == nil {
+	if d == nil || cap.DataScope != datastore.GlobalScope || !cap.Multihost || nodes == nil {
 		return
 	}
 
@@ -712,13 +712,17 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 		return nil, types.ForbiddenErrorf("Ingress network can only be global scope network")
 	}
 
+	if network.multihost && !cap.Multihost {
+		return nil, types.ForbiddenErrorf("network driver is not multihost capable")
+	}
+
 	if !network.configOnly &&
-		cap.DataScope == datastore.GlobalScope && !c.isDistributedControl() && !network.dynamic {
+		(cap.DataScope == datastore.GlobalScope || network.multihost) &&
+		!c.isDistributedControl() && !network.dynamic {
 		if c.isManager() {
 			// For non-distributed controlled environment, globalscoped non-dynamic networks are redirected to Manager
 			return nil, ManagerRedirectError(name)
 		}
-
 		return nil, types.ForbiddenErrorf("Cannot create a multi-host network from a worker node. Please create the network from a manager node.")
 	}
 

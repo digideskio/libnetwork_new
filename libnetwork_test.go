@@ -359,6 +359,29 @@ func TestDeleteNetworkWithActiveEndpoints(t *testing.T) {
 	}
 }
 
+func TestNetworkMultihost(t *testing.T) {
+	if !testutils.IsRunningInContainer() {
+		defer testutils.SetupTestOSContext(t)()
+	}
+
+	_, err := controller.NewNetwork("bridge", "nw0", "",
+		libnetwork.NetworkOptionMultihost())
+	if err == nil {
+		t.Fatal("Expected to fail. But instead succeeded")
+	}
+	if _, ok := err.(types.ForbiddenError); !ok {
+		t.Fatalf("Did not fail with expected error. Actual error: %v", err)
+	}
+
+	n, err := controller.NewNetwork("macvlan", "nw-mv", "", libnetwork.NetworkOptionMultihost())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.Delete(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNetworkConfig(t *testing.T) {
 	if !testutils.IsRunningInContainer() {
 		defer testutils.SetupTestOSContext(t)()
