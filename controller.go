@@ -661,8 +661,8 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 		id = stringid.GenerateRandomID()
 	}
 
-	defaultIpam := defaultIpamForNetworkType(networkType)
 	// Construct the network object
+	defaultIpam := defaultIpamForNetworkType(networkType)
 	network := &network{
 		name:        name,
 		networkType: networkType,
@@ -677,16 +677,43 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 
 	network.processOptions(options...)
 
-	_, cap, err := network.resolveDriver(networkType, true)
+	if err := network.validateConfiguration(); err != nil {
+		return nil, err
+	}
+
+	if network.configFrom != "" {
+		t, err := c.getConfigNetwork(network.configFrom)
+		if err != nil {
+			return nil, types.NotFoundErrorf("configuration network %q does not exist", network.configFrom)
+		}
+		if err := t.applyConfigurationTo(network); err != nil {
+			return nil, types.InternalErrorf("Failed to apply configuration: %v", err)
+		}
+		defer func() {
+			if err == nil {
+				if err := t.getEpCnt().IncEndpointCnt(); err != nil {
+					logrus.Warnf("Failed to update reference count for configuration network %q on creation of network %q: %v",
+						t.Name(), network.Name(), err)
+				}
+			}
+		}()
+	}
+
+	_, cap, err := network.resolveDriver(network.networkType, true)
 	if err != nil {
 		return nil, err
+	}
+
+	if network.configOnly && cap.DataScope != datastore.LocalScope {
+		return nil, types.NotImplementedErrorf("configuration networks are currently supported only with local scope drivers")
 	}
 
 	if network.ingress && cap.DataScope != datastore.GlobalScope {
 		return nil, types.ForbiddenErrorf("Ingress network can only be global scope network")
 	}
 
-	if cap.DataScope == datastore.GlobalScope && !c.isDistributedControl() && !network.dynamic {
+	if !network.configOnly &&
+		cap.DataScope == datastore.GlobalScope && !c.isDistributedControl() && !network.dynamic {
 		if c.isManager() {
 			// For non-distributed controlled environment, globalscoped non-dynamic networks are redirected to Manager
 			return nil, ManagerRedirectError(name)
@@ -699,6 +726,11 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 	// before we allocate anything.
 	if _, err := network.driver(true); err != nil {
 		return nil, err
+	}
+
+	// Skip allocation and plumbing for configuration networks
+	if network.configOnly {
+		goto addToStore
 	}
 
 	err = network.ipamAllocate()
@@ -723,6 +755,7 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 		}
 	}()
 
+addToStore:
 	// First store the endpoint count, then the network. To avoid to
 	// end up with a datastore containing a network and not an epCnt,
 	// in case of an ungraceful shutdown during this function call.
@@ -740,7 +773,11 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 
 	network.epCnt = epCnt
 	if err = c.updateToStore(network); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create network %q: %v", network.name, err)
+	}
+
+	if network.configOnly {
+		return network, nil
 	}
 
 	joinCluster(network)
@@ -755,6 +792,9 @@ func (c *controller) NewNetwork(networkType, name string, id string, options ...
 
 var joinCluster NetworkWalker = func(nw Network) bool {
 	n := nw.(*network)
+	if n.ConfigOnly() {
+		return false
+	}
 	if err := n.joinCluster(); err != nil {
 		logrus.Errorf("Failed to join network %s (%s) into agent cluster: %v", n.Name(), n.ID(), err)
 	}
@@ -770,6 +810,9 @@ func (c *controller) reservePools() {
 	}
 
 	for _, n := range networks {
+		if n.ConfigOnly() {
+			continue
+		}
 		if !doReplayPoolReserve(n) {
 			continue
 		}
