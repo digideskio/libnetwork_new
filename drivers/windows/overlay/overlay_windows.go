@@ -37,6 +37,7 @@ type driver struct {
 func Init(dc driverapi.DriverCallback, config map[string]interface{}) error {
 	c := driverapi.Capability{
 		DataScope: datastore.GlobalScope,
+		Multihost: true,
 	}
 
 	d := &driver{
