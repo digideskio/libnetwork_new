@@ -165,6 +165,8 @@ type controller struct {
 	networkLocker          *locker.Locker
 	agentInitDone          chan struct{}
 	agentStopDone          chan struct{}
+	keysAvailable          chan struct{}
+	agentInitInProgress    chan struct{}
 	keys                   []*types.EncryptionKey
 	clusterConfigAvailable bool
 	sync.Mutex
@@ -178,13 +180,15 @@ type initializer struct {
 // New creates a new instance of network controller.
 func New(cfgOptions ...config.Option) (NetworkController, error) {
 	c := &controller{
-		id:              stringid.GenerateRandomID(),
-		cfg:             config.ParseConfigOptions(cfgOptions...),
-		sandboxes:       sandboxTable{},
-		svcRecords:      make(map[string]svcInfo),
-		serviceBindings: make(map[serviceKey]*service),
-		agentInitDone:   make(chan struct{}),
-		networkLocker:   locker.New(),
+		id:                  stringid.GenerateRandomID(),
+		cfg:                 config.ParseConfigOptions(cfgOptions...),
+		sandboxes:           sandboxTable{},
+		svcRecords:          make(map[string]svcInfo),
+		serviceBindings:     make(map[serviceKey]*service),
+		agentInitDone:       make(chan struct{}),
+		keysAvailable:       make(chan struct{}),
+		agentInitInProgress: make(chan struct{}),
+		networkLocker:       locker.New(),
 	}
 
 	if err := c.initStores(); err != nil {
@@ -262,12 +266,6 @@ func isValidClusteringIP(addr string) bool {
 // libnetwork side of agent depends on the keys. On the first receipt of
 // keys setup the agent. For subsequent key set handle the key change
 func (c *controller) SetKeys(keys []*types.EncryptionKey) error {
-	c.Lock()
-	existingKeys := c.keys
-	clusterConfigAvailable := c.clusterConfigAvailable
-	agent := c.agent
-	c.Unlock()
-
 	subsysKeys := make(map[string]int)
 	for _, key := range keys {
 		if key.Subsystem != subsysGossip &&
@@ -282,25 +280,24 @@ func (c *controller) SetKeys(keys []*types.EncryptionKey) error {
 		}
 	}
 
-	if len(existingKeys) == 0 {
+	c.Lock()
+	existingKeys := c.keys
+	agent := c.agent
+	c.Unlock()
+
+	if len(existingKeys) == 0 || agent == nil {
 		c.Lock()
 		c.keys = keys
 		c.Unlock()
-		if agent != nil {
-			return (fmt.Errorf("libnetwork agent setup without keys"))
-		}
-		if clusterConfigAvailable {
-			return c.agentSetup()
-		}
-		logrus.Debug("received encryption keys before cluster config")
+		logrus.Infof("SetKeys: closing keysavailable ch")
+		close(c.keysAvailable)
 		return nil
 	}
-	if agent == nil {
-		c.Lock()
-		c.keys = keys
-		c.Unlock()
-		return nil
-	}
+
+	logrus.Infof("Waiting for agent to init")
+	c.AgentInitWait()
+	logrus.Infof("Init done for agent to init")
+
 	return c.handleKeyChange(keys)
 }
 
@@ -316,20 +313,13 @@ func (c *controller) clusterAgentInit() {
 		select {
 		case <-clusterProvider.ListenClusterEvents():
 			if !c.isDistributedControl() {
-				c.Lock()
-				c.clusterConfigAvailable = true
-				keys := c.keys
-				c.Unlock()
-				// agent initialization needs encryption keys and bind/remote IP which
-				// comes from the daemon cluster events
-				if len(keys) > 0 {
-					c.agentSetup()
-				}
+				c.agentSetup()
 			}
 		case <-c.cfg.Daemon.DisableProvider:
 			c.Lock()
 			c.clusterConfigAvailable = false
 			c.agentInitDone = make(chan struct{})
+			c.keysAvailable = make(chan struct{})
 			c.keys = nil
 			c.Unlock()
 

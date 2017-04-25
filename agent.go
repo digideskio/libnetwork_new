@@ -193,11 +193,23 @@ func (c *controller) handleKeyChange(keys []*types.EncryptionKey) error {
 }
 
 func (c *controller) agentSetup() error {
+	logrus.Infof("Waiting for the keys")
+	<-c.keysAvailable
+	logrus.Infof("Keys available, setting up agent now")
+
+	c.agentInitInProgress <- struct{}{}
+	defer func() { <-c.agentInitInProgress }()
+
 	c.Lock()
 	clusterProvider := c.cfg.Daemon.ClusterProvider
 	agent := c.agent
 	c.Unlock()
 
+	if agent != nil {
+		logrus.Infof("Skipping redundant agentSetup request")
+		return nil
+	}
+	
 	if clusterProvider == nil {
 		msg := "Aborting initialization of Libnetwork Agent because cluster provider is now unset"
 		logrus.Errorf(msg)
