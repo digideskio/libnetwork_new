@@ -54,6 +54,7 @@ var (
 	ErrIPOutOfRange        = types.BadRequestErrorf("Requested address is out of range")
 	ErrPoolOverlap         = types.ForbiddenErrorf("Pool overlaps with other one on this address space")
 	ErrBadPool             = types.BadRequestErrorf("Address space does not contain specified address pool")
+	ErrNotSupported        = types.BadRequestErrorf("Do not support requested operation")
 )
 
 /*******************************

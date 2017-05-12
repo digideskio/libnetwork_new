@@ -829,6 +829,7 @@ func (sb *sandbox) populateNetworkResources(ep *endpoint) error {
 		if err := sb.osSbox.AddInterface(i.srcName, i.dstPrefix, ifaceOptions...); err != nil {
 			return fmt.Errorf("failed to add interface %s to sandbox: %v", i.srcName, err)
 		}
+		ifaceOptions = append(ifaceOptions, sb.osSbox.InterfaceOptions().EnableIPv6(ep.getNetwork().enableIPv6))
 	}
 
 	if joinInfo != nil {
